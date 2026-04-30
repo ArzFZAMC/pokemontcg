@@ -71,13 +71,18 @@ export default function Battle() {
     });
 
     socket.on('room_state', ({ room, cards: c, logs: l }) => {
-      setRoomData(room);
-      setCards(c || []);
-      setLogs(l || []);
-      if (room?.status === 'battle') setPhase(BATTLE_PHASES.BATTLE);
-      else if (room?.status === 'selecting') setPhase(BATTLE_PHASES.SELECTING);
-      else if (room?.status === 'finished') setPhase(BATTLE_PHASES.FINISHED);
-    });
+  setRoomData(room);
+  setCards(c || []);
+  setLogs(l || []);
+
+  // ← TAMBAH INI
+  if (room?.status === 'finished') setPhase(BATTLE_PHASES.FINISHED);
+  else if (room?.status === 'battle') setPhase(BATTLE_PHASES.BATTLE);
+  else if (room?.status === 'selecting') setPhase(BATTLE_PHASES.SELECTING); // ← ini sudah ada
+  else if (room?.status === 'waiting' && phase !== BATTLE_PHASES.WAITING) {
+    // jangan override kalau lagi waiting
+  }
+});
 
     socket.on('player_joined', ({ username }) => {
       toast.success(`${username} joined the room! 🎮`);
@@ -87,6 +92,11 @@ export default function Battle() {
     socket.on('battle_start', ({ message }) => {
       toast.success(message, { duration: 3000 });
       setPhase(BATTLE_PHASES.BATTLE);
+    });
+
+    socket.on('battle_phase_change', ({ phase: p }) => {
+      if (p === 'selecting') setPhase(BATTLE_PHASES.SELECTING);
+      if (p === 'battle') setPhase(BATTLE_PHASES.BATTLE);
     });
 
     socket.on('attack_result', (result) => {

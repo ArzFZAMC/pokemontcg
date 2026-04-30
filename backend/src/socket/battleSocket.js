@@ -103,6 +103,11 @@ module.exports = (io) => {
         const state = await getRoomState(roomId);
         io.to(`room_${roomId}`).emit('room_state', state);
 
+        // Notify semua kalau status berubah
+if (state.room?.status === 'selecting') {
+  io.to(`room_${roomId}`).emit('battle_phase_change', { phase: 'selecting' });
+}
+
         socket.to(`room_${roomId}`).emit('player_joined', {
           userId: user.userId,
           username: user.username,
