@@ -30,20 +30,39 @@ export default defineConfig({
           {
             urlPattern: /^https:\/\/api\.pokemontcg\.io\/.*/i,
             handler: 'NetworkFirst',
-            options: { cacheName: 'pokemon-api-cache', expiration: { maxEntries: 100, maxAgeSeconds: 86400 } }
+            options: {
+              cacheName: 'pokemon-api-cache',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 86400
+              }
+            }
           },
           {
             urlPattern: /^https:\/\/images\.pokemontcg\.io\/.*/i,
             handler: 'CacheFirst',
-            options: { cacheName: 'pokemon-images-cache', expiration: { maxEntries: 500, maxAgeSeconds: 604800 } }
+            options: {
+              cacheName: 'pokemon-images-cache',
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 604800
+              }
+            }
           }
         ]
       }
     })
   ],
+
   server: {
+    host: '0.0.0.0',
+    allowedHosts: true,
+
     proxy: {
-      '/api': { target: 'http://localhost:5000', changeOrigin: true }
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
     }
   }
 });
