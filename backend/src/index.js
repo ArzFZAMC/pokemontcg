@@ -16,10 +16,10 @@ app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/decks', require('./routes/decks'));
 app.use('/api/achievements', require('./routes/achievements'));
 app.use('/api/trade', require('./routes/trade'));
+app.use('/api/coins', require('./routes/coins')); // ← BARU
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', version: '1.0.0', app: 'PocketDex TCG' }));
 
-// Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ success: false, message: 'Internal server error' });

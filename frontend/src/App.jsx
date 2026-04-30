@@ -14,6 +14,7 @@ import PackSimulator from './pages/PackSimulator';
 import Profile from './pages/Profile';
 import Achievements from './pages/Achievements';
 import Trade from './pages/Trade';
+import CoinShop from './pages/CoinShop';
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="decks" element={<DeckBuilder />} />
             <Route path="pack-simulator" element={<PackSimulator />} />
             <Route path="trade" element={<Trade />} />
+            <Route path="coins" element={<CoinShop />} />
             <Route path="achievements" element={<Achievements />} />
             <Route path="profile" element={<Profile />} />
           </Route>
