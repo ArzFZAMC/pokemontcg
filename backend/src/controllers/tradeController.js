@@ -1,5 +1,19 @@
 const db = require('../config/database');
 
+// Helper: pastikan selalu valid JSON string atau null
+function safeJsonStringify(data) {
+  if (data === null || data === undefined) return null;
+  if (typeof data === 'string') {
+    try { JSON.parse(data); return data; }
+    catch { return null; }
+  }
+  if (typeof data === 'object') {
+    try { return JSON.stringify(data); }
+    catch { return null; }
+  }
+  return null;
+}
+
 // ─── MARKETPLACE LISTINGS ───────────────────────────────────────
 
 const getListings = async (req, res) => {
@@ -16,7 +30,6 @@ const getListings = async (req, res) => {
     if (search) { query += ' AND tl.card_name LIKE ?'; params.push(`%${search}%`); }
     if (rarity) { query += ' AND tl.card_rarity = ?'; params.push(rarity); }
     if (trade_type) { query += ' AND (tl.trade_type = ? OR tl.trade_type = "both")'; params.push(trade_type); }
-
     query += ' ORDER BY tl.created_at DESC';
 
     const [rows] = await db.query(query, params);
@@ -71,7 +84,7 @@ const createListing = async (req, res) => {
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [
         req.user.id, card_id, card_name, card_image, card_rarity, card_set_name,
-        card_data ? JSON.stringify(card_data) : null,
+        safeJsonStringify(card_data),
         trade_type || 'both', coin_price || null,
         want_card_name || null, want_card_rarity || null
       ]
@@ -183,7 +196,7 @@ const sendOffer = async (req, res) => {
         listing_id || null, req.user.id, receiverId,
         offer_type || 'coin', coin_amount || 0,
         offer_card_id || null, offer_card_name || null, offer_card_image || null,
-        offer_card_data ? JSON.stringify(offer_card_data) : null,
+        safeJsonStringify(offer_card_data),
         message || null
       ]
     );
@@ -245,7 +258,7 @@ const acceptOffer = async (req, res) => {
         await conn.query('DELETE FROM collections WHERE id=?', [sellerCard.id]);
       }
 
-      // ✅ listing.card_data sudah string dari DB, langsung pakai
+      // listing.card_data dari DB sudah string, pakai safeJsonStringify untuk validasi
       await conn.query(
         `INSERT INTO collections (user_id, card_id, card_name, card_image, card_rarity, card_set_name, card_data, quantity)
          VALUES (?,?,?,?,?,?,?,1)
@@ -253,7 +266,7 @@ const acceptOffer = async (req, res) => {
         [
           buyerId, listing.card_id, listing.card_name, listing.card_image,
           listing.card_rarity, listing.card_set_name,
-          listing.card_data ?? null
+          safeJsonStringify(listing.card_data)
         ]
       );
 
@@ -277,15 +290,19 @@ const acceptOffer = async (req, res) => {
         await conn.query('DELETE FROM collections WHERE id=?', [buyerCard.id]);
       }
 
-      // ✅ offer.offer_card_data sudah string dari DB, langsung pakai
+      // ✅ pakai offer.offer_card_* bukan listing.*
       await conn.query(
         `INSERT INTO collections (user_id, card_id, card_name, card_image, card_rarity, card_set_name, card_data, quantity)
          VALUES (?,?,?,?,?,?,?,1)
          ON DUPLICATE KEY UPDATE quantity=quantity+1`,
         [
-          sellerId, offer.offer_card_id, offer.offer_card_name, offer.offer_card_image,
-          offer.offer_card_rarity ?? null, null,
-          offer.offer_card_data ?? null
+          sellerId,
+          offer.offer_card_id,
+          offer.offer_card_name,
+          offer.offer_card_image,
+          offer.offer_card_rarity ?? null,
+          null,
+          safeJsonStringify(offer.offer_card_data)
         ]
       );
     }
