@@ -1,8 +1,14 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
+const { Server } = require('socket.io');
 require('dotenv').config();
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
 
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
@@ -16,7 +22,11 @@ app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/decks', require('./routes/decks'));
 app.use('/api/achievements', require('./routes/achievements'));
 app.use('/api/trade', require('./routes/trade'));
-app.use('/api/coins', require('./routes/coins')); // ← BARU
+app.use('/api/coins', require('./routes/coins'));
+app.use('/api/battle', require('./routes/battle')); // ← BARU
+
+// Socket.io battle engine
+require('./socket/battleSocket')(io);
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', version: '1.0.0', app: 'PocketDex TCG' }));
 
@@ -26,4 +36,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 PocketDex API running on port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 PocketDex API + Socket.io running on port ${PORT}`));

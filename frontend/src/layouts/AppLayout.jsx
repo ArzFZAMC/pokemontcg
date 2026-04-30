@@ -7,7 +7,7 @@ import {
   MdViewModule, MdPerson, MdEmojiEvents,
   MdLogout, MdMenu, MdClose, MdSwapHoriz, MdMonetizationOn
 } from 'react-icons/md';
-import { GiCardPickup } from 'react-icons/gi';
+import { GiCardPickup, GiSwordWound } from 'react-icons/gi';
 
 const navItems = [
   { to: '/', icon: MdDashboard, label: 'Dashboard' },
@@ -17,7 +17,8 @@ const navItems = [
   { to: '/decks', icon: MdViewModule, label: 'Decks' },
   { to: '/pack-simulator', icon: GiCardPickup, label: 'Pack Opening' },
   { to: '/trade', icon: MdSwapHoriz, label: 'Trade' },
-  { to: '/coins', icon: MdMonetizationOn, label: 'Coins', highlight: true },
+  { to: '/battle', icon: GiSwordWound, label: 'PvP Battle', highlight: true },
+  { to: '/coins', icon: MdMonetizationOn, label: 'Coins' },
   { to: '/achievements', icon: MdEmojiEvents, label: 'Achievements' },
   { to: '/profile', icon: MdPerson, label: 'Profile' },
 ];
@@ -26,8 +27,8 @@ const bottomNavItems = [
   { to: '/', icon: MdDashboard, label: 'Home' },
   { to: '/collection', icon: MdCollections, label: 'Cards' },
   { to: '/pack-simulator', icon: GiCardPickup, label: 'Packs' },
-  { to: '/trade', icon: MdSwapHoriz, label: 'Trade' },
-  { to: '/coins', icon: MdMonetizationOn, label: 'Coins' },
+  { to: '/battle', icon: GiSwordWound, label: 'Battle' },
+  { to: '/profile', icon: MdPerson, label: 'Profile' },
 ];
 
 export default function AppLayout() {
@@ -42,14 +43,13 @@ export default function AppLayout() {
      ${isActive
        ? 'bg-gradient-to-r from-neon-purple/20 to-neon-blue/10 text-white border border-neon-purple/30'
        : highlight
-         ? 'text-neon-gold/70 hover:text-neon-gold hover:bg-neon-gold/10'
+         ? 'text-neon-purple/70 hover:text-neon-purple hover:bg-neon-purple/10'
          : 'text-white/50 hover:text-white hover:bg-white/5'}`;
 
   return (
     <div className="h-screen bg-navy-900 flex overflow-hidden">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 min-h-screen bg-navy-800/50 border-r border-white/5 p-4 sticky top-0 overflow-y-auto">
-        {/* Logo */}
         <div className="flex items-center gap-3 px-4 py-4 mb-6 flex-shrink-0">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-purple to-neon-blue flex items-center justify-center shadow-neon-purple">
             <GiCardPickup className="text-white text-xl" />
@@ -60,7 +60,6 @@ export default function AppLayout() {
           </div>
         </div>
 
-        {/* User card */}
         <div className="glass-card p-3 mb-6 flex items-center gap-3 flex-shrink-0">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-neon-purple to-neon-blue flex items-center justify-center text-sm font-bold">
             {user?.username?.[0]?.toUpperCase()}
@@ -71,17 +70,16 @@ export default function AppLayout() {
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 space-y-1">
           {navItems.map(item => (
             <NavLink
               key={item.to} to={item.to} end={item.to === '/'}
               className={(props) => navLinkClass(props, item.highlight)}
             >
-              <item.icon className={`text-lg flex-shrink-0 ${item.highlight ? 'text-neon-gold' : ''}`} />
+              <item.icon className={`text-lg flex-shrink-0 ${item.highlight ? 'text-neon-purple' : ''}`} />
               <span>{item.label}</span>
               {item.highlight && (
-                <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-neon-gold/20 text-neon-gold border border-neon-gold/20">
+                <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-neon-purple/20 text-neon-purple border border-neon-purple/20">
                   NEW
                 </span>
               )}
@@ -96,7 +94,7 @@ export default function AppLayout() {
         </button>
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
+      {/* Mobile Sidebar */}
       <AnimatePresence>
         {sidebarOpen && (
           <>
@@ -128,10 +126,10 @@ export default function AppLayout() {
                     className={(props) => navLinkClass(props, item.highlight)}
                     onClick={() => setSidebarOpen(false)}
                   >
-                    <item.icon className={`text-lg ${item.highlight ? 'text-neon-gold' : ''}`} />
+                    <item.icon className={`text-lg ${item.highlight ? 'text-neon-purple' : ''}`} />
                     <span>{item.label}</span>
                     {item.highlight && (
-                      <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-neon-gold/20 text-neon-gold border border-neon-gold/20">
+                      <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-neon-purple/20 text-neon-purple border border-neon-purple/20">
                         NEW
                       </span>
                     )}
@@ -150,7 +148,6 @@ export default function AppLayout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Mobile Header */}
         <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-navy-800/80 backdrop-blur-md border-b border-white/5 sticky top-0 z-30 flex-shrink-0">
           <button onClick={() => setSidebarOpen(true)} className="text-white/70 hover:text-white">
             <MdMenu className="text-2xl" />
@@ -167,7 +164,6 @@ export default function AppLayout() {
           </NavLink>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 p-4 lg:p-6 pb-24 lg:pb-6 overflow-y-auto overflow-x-hidden">
           <motion.div
             key={window.location.pathname}
@@ -180,7 +176,7 @@ export default function AppLayout() {
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 bg-navy-800/90 backdrop-blur-lg border-t border-white/5 z-30 lg:hidden bottom-nav">
         <div className="flex items-center justify-around py-2">
           {bottomNavItems.map(item => (
@@ -189,7 +185,7 @@ export default function AppLayout() {
               className={({ isActive }) =>
                 `flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all duration-200
                  ${isActive
-                   ? item.to === '/coins' ? 'text-neon-gold' : 'text-neon-purple'
+                   ? item.to === '/battle' ? 'text-neon-purple' : 'text-neon-purple'
                    : 'text-white/40'}`
               }
             >
