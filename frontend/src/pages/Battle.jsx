@@ -141,7 +141,7 @@ export default function Battle() {
   }, [user]);
 
       // Polling fallback untuk ngrok/beda jaringan
-    // Jika stuck di WAITING lebih dari 3 detik, poll room status dari server
+    // Polling fallback untuk ngrok/beda jaringan
     useEffect(() => {
       if (phase !== BATTLE_PHASES.WAITING || !roomId) return;
       
@@ -149,17 +149,37 @@ export default function Battle() {
         try {
           const res = await API.get(`/battle/room/${roomId}`);
           const room = res.data.room;
+          console.log('Polling room status:', room?.status);
           if (room?.status === 'selecting') {
-            console.log('Polling detected: room is selecting, updating phase');
             updatePhase(BATTLE_PHASES.SELECTING);
             clearInterval(interval);
           }
-        } catch {}
-      }, 3000);
+        } catch (err) {
+          console.error('Polling error:', err);
+        }
+      }, 2000); // cek setiap 2 detik
 
       return () => clearInterval(interval);
     }, [phase, roomId]);
 
+      useEffect(() => {
+        if (phase !== BATTLE_PHASES.WAITING || !roomId) return;
+        
+        const interval = setInterval(async () => {
+          try {
+            const res = await API.get(`/battle/room/${roomId}`);
+            const room = res.data.room;
+            console.log('Polling:', room?.status);
+            if (room?.status === 'selecting') {
+              setPhase(BATTLE_PHASES.SELECTING); // pakai setPhase kalau belum ada updatePhase
+              clearInterval(interval);
+            }
+          } catch {}
+        }, 2000);
+
+        return () => clearInterval(interval);
+      }, [phase, roomId]);
+      
   const handleCreateRoom = async () => {
     setLoading(true);
     try {
