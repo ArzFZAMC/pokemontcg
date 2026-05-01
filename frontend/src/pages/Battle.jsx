@@ -162,24 +162,6 @@ export default function Battle() {
       return () => clearInterval(interval);
     }, [phase, roomId]);
 
-      useEffect(() => {
-        if (phase !== BATTLE_PHASES.WAITING || !roomId) return;
-        
-        const interval = setInterval(async () => {
-          try {
-            const res = await API.get(`/battle/room/${roomId}`);
-            const room = res.data.room;
-            console.log('Polling:', room?.status);
-            if (room?.status === 'selecting') {
-              setPhase(BATTLE_PHASES.SELECTING); // pakai setPhase kalau belum ada updatePhase
-              clearInterval(interval);
-            }
-          } catch {}
-        }, 2000);
-
-        return () => clearInterval(interval);
-      }, [phase, roomId]);
-      
   const handleCreateRoom = async () => {
     setLoading(true);
     try {
