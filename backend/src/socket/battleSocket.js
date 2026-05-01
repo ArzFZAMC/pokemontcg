@@ -88,36 +88,45 @@ module.exports = (io) => {
     });
 
     // ── JOIN ROOM ─────────────────────────────────
-        socket.on('join_room', async ({ roomId }) => {
-          try {
-            const user = socketUsers.get(socket.id);
-            if (!user) return socket.emit('error', { message: 'Not authenticated' });
+              socket.on('join_room', async ({ roomId }) => {
+        try {
+          const user = socketUsers.get(socket.id);
+          if (!user) return socket.emit('error', { message: 'Not authenticated' });
 
-            socket.join(`room_${roomId}`);
-            user.roomId = parseInt(roomId);
-            socketUsers.set(socket.id, user);
+          socket.join(`room_${roomId}`);
+          user.roomId = parseInt(roomId);
+          socketUsers.set(socket.id, user);
 
-            if (!roomSockets.has(roomId)) roomSockets.set(roomId, new Set());
-            roomSockets.get(roomId).add(socket.id);
+          if (!roomSockets.has(roomId)) roomSockets.set(roomId, new Set());
+          roomSockets.get(roomId).add(socket.id);
 
-            const state = await getRoomState(roomId);
-            io.to(`room_${roomId}`).emit('room_state', state);
+          const state = await getRoomState(roomId);
+          io.to(`room_${roomId}`).emit('room_state', state);
 
-            // Notify semua kalau status berubah
-    if (state.room?.status === 'selecting') {
-      io.to(`room_${roomId}`).emit('battle_phase_change', { phase: 'selecting' });
-    }
-
-            socket.to(`room_${roomId}`).emit('player_joined', {
-              userId: user.userId,
-              username: user.username,
-            });
-
-            console.log(`👤 ${user.username} joined room ${roomId}`);
-          } catch (err) {
-            socket.emit('error', { message: err.message });
+          if (state.room?.status === 'selecting') {
+            io.to(`room_${roomId}`).emit('battle_phase_change', { phase: 'selecting' });
+            
+            // ← TAMBAH INI: kirim ulang setelah 1 detik sebagai fallback
+            // untuk handle race condition ngrok/beda jaringan
+            setTimeout(async () => {
+              const freshState = await getRoomState(roomId);
+              io.to(`room_${roomId}`).emit('room_state', freshState);
+              if (freshState.room?.status === 'selecting') {
+                io.to(`room_${roomId}`).emit('battle_phase_change', { phase: 'selecting' });
+              }
+            }, 1000);
           }
-        });
+
+          socket.to(`room_${roomId}`).emit('player_joined', {
+            userId: user.userId,
+            username: user.username,
+          });
+
+          console.log(`👤 ${user.username} joined room ${roomId}, status: ${state.room?.status}`);
+        } catch (err) {
+          socket.emit('error', { message: err.message });
+        }
+      });
 
     // ── CARDS READY (both players selected) ──────
     socket.on('cards_ready', async ({ roomId }) => {

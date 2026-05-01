@@ -140,10 +140,25 @@ export default function Battle() {
     return socket;
   }, [user]);
 
-  useEffect(() => {
-    setupSocket();
-    return () => { socketRef.current?.disconnect(); };
-  }, [setupSocket]);
+      // Polling fallback untuk ngrok/beda jaringan
+    // Jika stuck di WAITING lebih dari 3 detik, poll room status dari server
+    useEffect(() => {
+      if (phase !== BATTLE_PHASES.WAITING || !roomId) return;
+      
+      const interval = setInterval(async () => {
+        try {
+          const res = await API.get(`/battle/room/${roomId}`);
+          const room = res.data.room;
+          if (room?.status === 'selecting') {
+            console.log('Polling detected: room is selecting, updating phase');
+            updatePhase(BATTLE_PHASES.SELECTING);
+            clearInterval(interval);
+          }
+        } catch {}
+      }, 3000);
+
+      return () => clearInterval(interval);
+    }, [phase, roomId]);
 
   const handleCreateRoom = async () => {
     setLoading(true);
