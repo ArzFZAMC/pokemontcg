@@ -88,36 +88,39 @@ module.exports = (io) => {
     });
 
     // ── JOIN ROOM ─────────────────────────────────
-    socket.on('join_room', async ({ roomId }) => {
-      try {
-        const user = socketUsers.get(socket.id);
-        if (!user) return socket.emit('error', { message: 'Not authenticated' });
+          socket.on('join_room', async ({ roomId }) => {
+        try {
+          const user = socketUsers.get(socket.id);
+          if (!user) return socket.emit('error', { message: 'Not authenticated' });
 
-        socket.join(`room_${roomId}`);
-        user.roomId = parseInt(roomId);
-        socketUsers.set(socket.id, user);
+          socket.join(`room_${roomId}`);
+          user.roomId = parseInt(roomId);
+          socketUsers.set(socket.id, user);
 
-        if (!roomSockets.has(roomId)) roomSockets.set(roomId, new Set());
-        roomSockets.get(roomId).add(socket.id);
+          if (!roomSockets.has(roomId)) roomSockets.set(roomId, new Set());
+          roomSockets.get(roomId).add(socket.id);
 
-        const state = await getRoomState(roomId);
-        io.to(`room_${roomId}`).emit('room_state', state);
+          const state = await getRoomState(roomId);
 
-        // Notify semua kalau status berubah
-if (state.room?.status === 'selecting') {
-  io.to(`room_${roomId}`).emit('battle_phase_change', { phase: 'selecting' });
-}
+          // Broadcast room_state ke semua di room
+          io.to(`room_${roomId}`).emit('room_state', state);
 
-        socket.to(`room_${roomId}`).emit('player_joined', {
-          userId: user.userId,
-          username: user.username,
-        });
+          // Kalau status sudah selecting, broadcast ke semua biar player 1 langsung pindah fase
+          if (state.room?.status === 'selecting') {
+            io.to(`room_${roomId}`).emit('battle_phase_change', { phase: 'selecting' });
+          }
 
-        console.log(`👤 ${user.username} joined room ${roomId}`);
-      } catch (err) {
-        socket.emit('error', { message: err.message });
-      }
-    });
+          // Notify player lain bahwa ada yang join
+          socket.to(`room_${roomId}`).emit('player_joined', {
+            userId: user.userId,
+            username: user.username,
+          });
+
+          console.log(`👤 ${user.username} joined room ${roomId}`);
+        } catch (err) {
+          socket.emit('error', { message: err.message });
+        }
+      });
 
     // ── CARDS READY (both players selected) ──────
     socket.on('cards_ready', async ({ roomId }) => {
