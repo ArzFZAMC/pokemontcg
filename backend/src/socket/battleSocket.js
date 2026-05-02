@@ -69,6 +69,13 @@ async function getRoomState(roomId) {
     weaknesses: (() => { try { return typeof c.weaknesses === 'string' ? JSON.parse(c.weaknesses) : (c.weaknesses || []); } catch { return []; } })(),
   }));
 
+    console.log('ROOM STATE:', {
+    roomId,
+    cards: parsedCards.length,
+    logs: logs.length,
+    status: room?.status
+  });
+
   return { room, cards: parsedCards, logs };
 }
 
@@ -129,21 +136,109 @@ module.exports = (io) => {
       });
 
     // ── CARDS READY (both players selected) ──────
-    socket.on('cards_ready', async ({ roomId }) => {
-      try {
-        const state = await getRoomState(roomId);
-        io.to(`room_${roomId}`).emit('room_state', state);
+          socket.on('cards_ready', async ({ roomId }) => {
+  try {
 
-        if (state.room?.status === 'battle') {
-          io.to(`room_${roomId}`).emit('battle_start', {
-            message: 'Battle Start! 🔥',
-            currentTurn: state.room.current_turn,
-          });
+    // ambil room
+    const [[room]] = await db.query(
+      'SELECT * FROM battle_rooms WHERE id=?',
+      [roomId]
+    );
+
+    if (!room) {
+      return socket.emit('error', {
+        message: 'Room not found'
+      });
+    }
+
+    // hitung kartu player 1
+    const [[p1]] = await db.query(
+      `SELECT COUNT(*) as total
+       FROM battle_cards
+       WHERE room_id=? AND user_id=?`,
+      [roomId, room.player1_id]
+    );
+
+    // hitung kartu player 2
+    const [[p2]] = await db.query(
+      `SELECT COUNT(*) as total
+       FROM battle_cards
+       WHERE room_id=? AND user_id=?`,
+      [roomId, room.player2_id]
+    );
+
+    console.log(
+      'READY CHECK:',
+      p1.total,
+      p2.total
+    );
+
+    // kalau dua player udah submit
+    if (p1.total >= 3 && p2.total >= 3) {
+
+      // set active card pertama
+      await db.query(
+        `UPDATE battle_cards
+         SET is_active=1
+         WHERE room_id=?
+         AND slot_order=1`,
+        [roomId]
+      );
+
+      // random turn
+      const firstTurn =
+        Math.random() > 0.5
+          ? room.player1_id
+          : room.player2_id;
+
+      // update room jadi battle
+      await db.query(
+        `UPDATE battle_rooms
+         SET status='battle',
+             current_turn=?
+         WHERE id=?`,
+        [firstTurn, roomId]
+      );
+
+      console.log(
+        '🔥 BATTLE STARTED:',
+        roomId
+      );
+    }
+
+    // ambil state terbaru
+    const state =
+      await getRoomState(roomId);
+
+    // kirim state
+    io.to(`room_${roomId}`).emit(
+      'room_state',
+      state
+    );
+
+    // kalau battle mulai
+    if (state.room?.status === 'battle') {
+
+      io.to(`room_${roomId}`).emit(
+        'battle_start',
+        {
+          message: 'Battle Start! 🔥',
+          currentTurn:
+            state.room.current_turn,
         }
-      } catch (err) {
-        socket.emit('error', { message: err.message });
-      }
+      );
+    }
+
+  } catch (err) {
+
+    console.error(err);
+
+    socket.emit('error', {
+      message: err.message
     });
+
+  }
+});
 
     // ── ATTACK ────────────────────────────────────
     socket.on('attack', async ({ roomId, attackIndex }) => {
@@ -155,7 +250,7 @@ module.exports = (io) => {
         const [[room]] = await db.query('SELECT * FROM battle_rooms WHERE id=?', [roomId]);
         if (!room) return socket.emit('error', { message: 'Room not found' });
         if (room.status !== 'battle') return socket.emit('error', { message: 'Battle not active' });
-        if (room.current_turn !== user.userId) {
+        if (Number(room.current_turn) !== Number(user.userId)) {
           return socket.emit('error', { message: "It's not your turn!" });
         }
 
@@ -179,7 +274,7 @@ module.exports = (io) => {
         if (!attack) return socket.emit('error', { message: 'Invalid attack' });
 
         // Get defender id
-        const defenderId = room.player1_id === user.userId ? room.player2_id : room.player1_id;
+        const defenderId = Number(room.player1_id) === Number(user.userId) ? room.player2_id : room.player1_id;
 
         // Get defender's active card
         const defenderCard = await getActiveCard(roomId, defenderId);

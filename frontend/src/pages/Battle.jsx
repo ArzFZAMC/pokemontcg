@@ -10,7 +10,11 @@ import BattleArena from '../components/battle/BattleArena';
 import { GiSwordWound, GiCardPickup } from 'react-icons/gi';
 import { MdAdd, MdLogin, MdEmojiEvents, MdMonetizationOn, MdClose } from 'react-icons/md';
 
-const API = axios.create({ baseURL: '/api' });
+const BASE_URL = 'https://5138-103-173-72-40.ngrok-free.app';
+
+const API = axios.create({
+  baseURL: `${BASE_URL}/api`
+});
 API.interceptors.request.use(cfg => {
   const token = localStorage.getItem('pdex_token');
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
@@ -56,11 +60,26 @@ export default function Battle() {
   const setupSocket = useCallback(() => {
     if (socketRef.current) socketRef.current.disconnect();
 
-    const socket = io('http://localhost:5000', {
-      transports: ['websocket'],
-      reconnectionAttempts: 5,
+    const socket = io(BASE_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      timeout: 20000,
+      upgrade: true,
+      rememberUpgrade: true,
     });
 
+        useEffect(() => {
+      if (!user) return;
+
+      const socket = setupSocket();
+
+      return () => {
+        socket?.disconnect();
+      };
+
+}, [setupSocket, user]);
     socket.on('connect', () => {
       console.log('Socket connected');
       socket.emit('auth', { userId: user.id, username: user.username });
@@ -71,18 +90,37 @@ export default function Battle() {
     });
 
     socket.on('room_state', ({ room, cards: c, logs: l }) => {
-  setRoomData(room);
-  setCards(c || []);
-  setLogs(l || []);
 
-  // ← TAMBAH INI
-  if (room?.status === 'finished') setPhase(BATTLE_PHASES.FINISHED);
-  else if (room?.status === 'battle') setPhase(BATTLE_PHASES.BATTLE);
-  else if (room?.status === 'selecting') setPhase(BATTLE_PHASES.SELECTING); // ← ini sudah ada
-  else if (room?.status === 'waiting' && phase !== BATTLE_PHASES.WAITING) {
-    // jangan override kalau lagi waiting
-  }
-});
+      setRoomData(room);
+      setCards(c || []);
+      setLogs(l || []);
+
+      console.log('ROOM STATUS:', room?.status);
+
+      // AUTO SYNC PHASE
+      if (room?.status === 'waiting') {
+        setPhase(BATTLE_PHASES.WAITING);
+      }
+
+      if (room?.status === 'selecting') {
+        setPhase(BATTLE_PHASES.SELECTING);
+      }
+
+      if (room?.status === 'battle') {
+
+        setIReady(false);
+
+        setTimeout(() => {
+          setPhase(BATTLE_PHASES.BATTLE);
+        }, 100);
+
+      }
+
+      if (room?.status === 'finished') {
+        setPhase(BATTLE_PHASES.FINISHED);
+      }
+
+    });
 
     socket.on('player_joined', ({ username }) => {
       toast.success(`${username} joined the room! 🎮`);
@@ -94,10 +132,7 @@ export default function Battle() {
       setPhase(BATTLE_PHASES.BATTLE);
     });
 
-    socket.on('battle_phase_change', ({ phase: p }) => {
-      if (p === 'selecting') setPhase(BATTLE_PHASES.SELECTING);
-      if (p === 'battle') setPhase(BATTLE_PHASES.BATTLE);
-    });
+    
 
     socket.on('attack_result', (result) => {
       setAttackLoading(false);
@@ -151,7 +186,7 @@ export default function Battle() {
           const room = res.data.room;
           console.log('Polling room status:', room?.status);
           if (room?.status === 'selecting') {
-            updatePhase(BATTLE_PHASES.SELECTING);
+            setPhase(BATTLE_PHASES.SELECTING);
             clearInterval(interval);
           }
         } catch (err) {
@@ -368,23 +403,38 @@ export default function Battle() {
       )}
 
       {/* ── CARD SELECTION ── */}
-      {phase === BATTLE_PHASES.SELECTING && (
+      {phase === BATTLE_PHASES.SELECTING && roomData?.status !== 'battle' && (
         <div className="space-y-4">
+
           {iReady ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className="glass-card p-6 text-center border border-green-500/20">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="glass-card p-6 text-center border border-green-500/20"
+            >
               <div className="text-4xl mb-3">✅</div>
-              <h2 className="text-lg font-bold text-white">Cards Submitted!</h2>
-              <p className="text-white/40 text-sm mt-1">Waiting for opponent to select their cards...</p>
+
+              <h2 className="text-lg font-bold text-white">
+                Cards Submitted!
+              </h2>
+
+              <p className="text-white/40 text-sm mt-1">
+                Waiting for opponent to select their cards...
+              </p>
+
               <div className="w-8 h-8 border-2 border-neon-purple/30 border-t-neon-purple rounded-full animate-spin mx-auto mt-4" />
             </motion.div>
+
           ) : (
+
             <CardSelector
               collection={collection}
               onSubmit={handleSubmitCards}
               loading={submitLoading}
             />
+
           )}
+
         </div>
       )}
 
