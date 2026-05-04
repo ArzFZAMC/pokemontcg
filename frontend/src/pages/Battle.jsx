@@ -177,25 +177,27 @@ export default function Battle() {
 
       // Polling fallback untuk ngrok/beda jaringan
     // Polling fallback untuk ngrok/beda jaringan
-    useEffect(() => {
-      if (phase !== BATTLE_PHASES.WAITING || !roomId) return;
-      
+        useEffect(() => {
+      if ((phase !== BATTLE_PHASES.WAITING && phase !== BATTLE_PHASES.SELECTING) || !roomId) return;
+      if (phase === BATTLE_PHASES.SELECTING && !iReady) return; // belum submit, skip
+
       const interval = setInterval(async () => {
         try {
           const res = await API.get(`/battle/room/${roomId}`);
           const room = res.data.room;
-          console.log('Polling room status:', room?.status);
+          console.log('Polling:', room?.status);
           if (room?.status === 'selecting') {
             setPhase(BATTLE_PHASES.SELECTING);
             clearInterval(interval);
+          } else if (room?.status === 'battle') {
+            setPhase(BATTLE_PHASES.BATTLE);
+            clearInterval(interval);
           }
-        } catch (err) {
-          console.error('Polling error:', err);
-        }
-      }, 2000); // cek setiap 2 detik
+        } catch {}
+      }, 2000);
 
       return () => clearInterval(interval);
-    }, [phase, roomId]);
+    }, [phase, roomId, iReady]);
 
   const handleCreateRoom = async () => {
     setLoading(true);

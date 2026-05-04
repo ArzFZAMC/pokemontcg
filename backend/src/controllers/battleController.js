@@ -214,14 +214,23 @@ const submitCards = async (req, res) => {
     }
 
     // Cek apakah kedua player sudah submit
-    const [submitted] = await db.query(
+        const [submitted] = await db.query(
       'SELECT DISTINCT user_id FROM battle_cards WHERE room_id=?',
       [room_id]
     );
 
     let battleStarted = false;
     if (submitted.length === 2) {
-      // Set turn ke player1, status battle
+      // Pastikan active card slot 0 (bukan slot 1)
+      await db.query(
+        "UPDATE battle_cards SET is_active=0 WHERE room_id=?",
+        [room_id]
+      );
+      await db.query(
+        `UPDATE battle_cards SET is_active=1 
+        WHERE room_id=? AND slot_order=0`,
+        [room_id]
+      );
       await db.query(
         "UPDATE battle_rooms SET status='battle', current_turn=player1_id WHERE id=?",
         [room_id]

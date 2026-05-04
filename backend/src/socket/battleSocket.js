@@ -140,16 +140,23 @@ module.exports = (io) => {
   try {
 
     // ambil room
-    const [[room]] = await db.query(
-      'SELECT * FROM battle_rooms WHERE id=?',
-      [roomId]
-    );
+    socket.on('cards_ready', async ({ roomId }) => {
+  try {
+    const state = await getRoomState(roomId);
+    io.to(`room_${roomId}`).emit('room_state', state);
 
-    if (!room) {
-      return socket.emit('error', {
-        message: 'Room not found'
+    if (state.room?.status === 'battle') {
+      io.to(`room_${roomId}`).emit('battle_start', {
+        message: 'Battle Start! 🔥',
+        currentTurn: state.room.current_turn,
       });
+      io.to(`room_${roomId}`).emit('battle_phase_change', { phase: 'battle' });
     }
+  } catch (err) {
+    console.error(err);
+    socket.emit('error', { message: err.message });
+  }
+});
 
     // hitung kartu player 1
     const [[p1]] = await db.query(
