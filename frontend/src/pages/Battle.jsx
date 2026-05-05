@@ -10,7 +10,7 @@ import BattleArena from '../components/battle/BattleArena';
 import { GiSwordWound, GiCardPickup } from 'react-icons/gi';
 import { MdAdd, MdLogin, MdEmojiEvents, MdMonetizationOn, MdClose } from 'react-icons/md';
 
-const BASE_URL = 'https://5138-103-173-72-40.ngrok-free.app';
+const BASE_URL = window.location.origin;
 
 const API = axios.create({
   baseURL: `${BASE_URL}/api`
@@ -95,7 +95,7 @@ export default function Battle() {
       setCards(c || []);
       setLogs(l || []);
 
-      console.log('ROOM STATUS:', room?.status);
+      console.log('room_state received:', room?.status, 'cards:', c?.length, 'roomData set:', !!room);
 
       // AUTO SYNC PHASE
       if (room?.status === 'waiting') {
@@ -178,26 +178,44 @@ export default function Battle() {
       // Polling fallback untuk ngrok/beda jaringan
     // Polling fallback untuk ngrok/beda jaringan
         useEffect(() => {
-      if ((phase !== BATTLE_PHASES.WAITING && phase !== BATTLE_PHASES.SELECTING) || !roomId) return;
-      if (phase === BATTLE_PHASES.SELECTING && !iReady) return; // belum submit, skip
+  // Poll saat WAITING, SELECTING (sudah ready), atau BATTLE tapi roomData null
+  const shouldPoll = 
+    phase === BATTLE_PHASES.WAITING ||
+    (phase === BATTLE_PHASES.SELECTING && iReady) ||
+    (phase === BATTLE_PHASES.BATTLE && !roomData);
+    
+  if (!shouldPoll || !roomId) return;
 
-      const interval = setInterval(async () => {
-        try {
-          const res = await API.get(`/battle/room/${roomId}`);
-          const room = res.data.room;
-          console.log('Polling:', room?.status);
-          if (room?.status === 'selecting') {
-            setPhase(BATTLE_PHASES.SELECTING);
-            clearInterval(interval);
-          } else if (room?.status === 'battle') {
-            setPhase(BATTLE_PHASES.BATTLE);
-            clearInterval(interval);
-          }
-        } catch {}
-      }, 2000);
+  const interval = setInterval(async () => {
+    try {
+      const res = await API.get(`/battle/room/${roomId}`);
+      const room = res.data.room;
+      const c = res.data.cards || [];
+      const l = res.data.logs || [];
+      
+      console.log('Polling:', room?.status);
+      
+      // Update roomData dan cards dari polling
+      setRoomData(room);
+      setCards(c);
+      setLogs(l);
+      
+      if (room?.status === 'selecting') {
+        setPhase(BATTLE_PHASES.SELECTING);
+      } else if (room?.status === 'battle') {
+        setPhase(BATTLE_PHASES.BATTLE);
+        clearInterval(interval);
+      } else if (room?.status === 'finished') {
+        setPhase(BATTLE_PHASES.FINISHED);
+        clearInterval(interval);
+      }
+    } catch (err) {
+      console.error('Polling error:', err);
+    }
+  }, 2000);
 
-      return () => clearInterval(interval);
-    }, [phase, roomId, iReady]);
+  return () => clearInterval(interval);
+}, [phase, roomId, iReady, roomData]);
 
   const handleCreateRoom = async () => {
     setLoading(true);
@@ -231,22 +249,61 @@ export default function Battle() {
   };
 
   const handleSubmitCards = async (selectedCards) => {
-    setSubmitLoading(true);
-    try {
-      const res = await API.post('/battle/cards/submit', {
-        room_id: roomId,
-        cards: selectedCards,
-      });
-      setIReady(true);
-      toast.success('Cards submitted! Waiting for opponent...');
-      socketRef.current?.emit('cards_ready', { roomId });
-      if (res.data.battleStarted) {
-        setPhase(BATTLE_PHASES.BATTLE);
+  setSubmitLoading(true);
+  try {
+    // Enrich cards — ambil HP & attacks dari card_data atau Pokémon TCG API
+    const enrichedCards = await Promise.all(selectedCards.map(async (card) => {
+      let hp = null;
+      let attacks = [];
+      let weaknesses = [];
+
+      // 1. Coba dari card_data dulu
+      if (card.card_data) {
+        try {
+          const data = typeof card.card_data === 'string'
+            ? JSON.parse(card.card_data) : card.card_data;
+          if (data?.hp) hp = parseInt(data.hp);
+          if (data?.attacks?.length) attacks = data.attacks;
+          if (data?.weaknesses?.length) weaknesses = data.weaknesses;
+        } catch {}
       }
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to submit cards');
-    } finally { setSubmitLoading(false); }
-  };
+
+      // 2. Kalau HP masih null, fetch langsung dari Pokémon TCG API
+      if (!hp && card.card_id) {
+        try {
+          const res = await API.get(`/cards/${card.card_id}`);
+          const apiCard = res.data.data;
+          if (apiCard?.hp) hp = parseInt(apiCard.hp);
+          if (apiCard?.attacks?.length) attacks = apiCard.attacks;
+          if (apiCard?.weaknesses?.length) weaknesses = apiCard.weaknesses;
+        } catch {}
+      }
+
+      // 3. Fallback ke card_hp field
+      if (!hp && card.card_hp) hp = parseInt(card.card_hp);
+
+      // 4. Default
+      if (!hp || isNaN(hp) || hp <= 0) hp = 60;
+
+      console.log(`[Card] ${card.card_name}: HP=${hp}, Attacks=${attacks.length}`);
+
+      return { ...card, card_hp: hp, attacks, weaknesses };
+    }));
+
+    const res = await API.post('/battle/cards/submit', {
+      room_id: roomId,
+      cards: enrichedCards,
+    });
+    setIReady(true);
+    toast.success('Cards submitted! Waiting for opponent...');
+    socketRef.current?.emit('cards_ready', { roomId });
+    if (res.data.battleStarted) {
+      setPhase(BATTLE_PHASES.BATTLE);
+    }
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Failed to submit cards');
+  } finally { setSubmitLoading(false); }
+};
 
   const handleAttack = (attackIndex) => {
     setAttackLoading(true);
@@ -405,7 +462,7 @@ export default function Battle() {
       )}
 
       {/* ── CARD SELECTION ── */}
-      {phase === BATTLE_PHASES.SELECTING && roomData?.status !== 'battle' && (
+      {phase === BATTLE_PHASES.SELECTING && (
         <div className="space-y-4">
 
           {iReady ? (
@@ -441,7 +498,8 @@ export default function Battle() {
       )}
 
       {/* ── BATTLE ── */}
-      {phase === BATTLE_PHASES.BATTLE && roomData && (
+          {phase === BATTLE_PHASES.BATTLE && (
+      roomData ? (
         <BattleArena
           room={roomData}
           cards={cards}
@@ -455,7 +513,13 @@ export default function Battle() {
           onSendChat={handleSendChat}
           attackLoading={attackLoading}
         />
-      )}
+      ) : (
+        <div className="glass-card p-8 text-center">
+          <div className="w-10 h-10 border-2 border-neon-purple/30 border-t-neon-purple rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/50">Loading battle...</p>
+        </div>
+      )
+    )}
 
       {/* ── FINISHED ── */}
       {phase === BATTLE_PHASES.FINISHED && (

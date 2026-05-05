@@ -35,7 +35,7 @@ function BattleCard({ card, isActive, isMyCard, onSelect, selectable }) {
     <motion.div
       whileHover={selectable ? { scale: 1.05 } : {}}
       onClick={selectable ? onSelect : undefined}
-      className={`relative rounded-xl overflow-hidden border-2 transition-all
+      className={`relative rounded-xl overflow-hidden border-2 transition-all text-[0px] min-w-0 overflow-hidden
         ${isActive
           ? isMyCard ? 'border-neon-purple/70 shadow-neon-purple' : 'border-red-500/70'
           : card.is_ko ? 'border-white/10 opacity-40' : 'border-white/20'}
@@ -71,11 +71,25 @@ function BattleCard({ card, isActive, isMyCard, onSelect, selectable }) {
       )}
 
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-2">
-        <p className="text-[9px] font-bold text-white truncate">{card.card_name}</p>
-        {isActive && !card.is_ko && (
-          <HPBar current={card.current_hp} max={card.max_hp} />
-        )}
+  <p className="text-[9px] font-bold text-white truncate">{card.card_name}</p>
+  {!card.is_ko && (
+    <div className="mt-1">
+      <div className="flex justify-between text-[8px] mb-0.5">
+        <span style={{ color: card.current_hp / card.max_hp > 0.5 ? '#4ade80' : card.current_hp / card.max_hp > 0.25 ? '#fbbf24' : '#f87171' }}>
+          {card.current_hp}/{card.max_hp}
+        </span>
       </div>
+      <div className="h-1 bg-black/50 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all"
+          style={{
+            width: `${Math.max(0, (card.current_hp / card.max_hp) * 100)}%`,
+            background: card.current_hp / card.max_hp > 0.5 ? '#4ade80' : card.current_hp / card.max_hp > 0.25 ? '#fbbf24' : '#f87171'
+          }}
+        />
+      </div>
+    </div>
+  )}
+</div>
     </motion.div>
   );
 }
@@ -149,7 +163,7 @@ export default function BattleArena({
         {/* Opponent's cards */}
         <div>
           <p className="text-xs text-red-400/70 mb-2 font-semibold">{oppName}'s Cards</p>
-          <div className="grid grid-cols-6 gap-1.5">
+          <div className="grid grid-cols-6 gap-1">
             {oppCards.map(card => (
               <BattleCard key={card.id} card={card} isActive={card.is_active && !card.is_ko} isMyCard={false} />
             ))}
