@@ -105,15 +105,25 @@ export default function BattleArena({
   const [showChat, setShowChat] = useState(false);
   const [showRetreat, setShowRetreat] = useState(false);
 
-  const myCards = cards.filter(c => c.user_id === myId);
-  const oppCards = cards.filter(c => c.user_id !== myId);
+const myCards = cards.filter(c => Number(c.user_id) === Number(myId));
+const oppCards = cards.filter(c => Number(c.user_id) !== Number(myId));
+
+// DEBUG LOG
+console.log('=== BATTLE ARENA DEBUG ===');
+console.log('myId:', myId, typeof myId);
+console.log('isMyTurn:', isMyTurn);
+console.log('cards total:', cards.length);
+console.log('myCards:', myCards.length);
+console.log('oppCards:', oppCards.length);
+console.log('attackLoading:', attackLoading);
+console.log('room current_turn:', room?.current_turn, typeof room?.current_turn);
   const myActive = myCards.find(c => c.is_active && !c.is_ko);
   const oppActive = oppCards.find(c => c.is_active && !c.is_ko);
 
-  const myKo = room?.player1_id === myId ? room?.player1_ko : room?.player2_ko;
-  const oppKo = room?.player1_id === myId ? room?.player2_ko : room?.player1_ko;
-  const myName = room?.player1_id === myId ? room?.player1_name : room?.player2_name;
-  const oppName = room?.player1_id === myId ? room?.player2_name : room?.player1_name;
+  const myKo = Number(room?.player1_id) === Number(myId) ? room?.player1_ko : room?.player2_ko;
+  const oppKo = Number(room?.player1_id) === Number(myId) ? room?.player2_ko : room?.player1_ko;
+  const myName = Number(room?.player1_id) === Number(myId) ? room?.player1_name : room?.player2_name;
+  const oppName = Number(room?.player1_id) === Number(myId) ? room?.player2_name : room?.player1_name;
 
   // Parse attacks for active card
   let myAttacks = [];
@@ -322,7 +332,7 @@ export default function BattleArena({
           >
             <div className="max-h-32 overflow-y-auto space-y-1">
               {chatMessages.length > 0 ? chatMessages.map((msg, i) => (
-                <div key={i} className={`text-xs ${msg.userId === myId ? 'text-right' : 'text-left'}`}>
+                <div key={i} className={`text-xs ${Number(msg.userId) === Number(myId) ? 'text-right' : 'text-left'}`}>
                   <span className="text-white/30">{msg.username}: </span>
                   <span className="text-white/70">{msg.message}</span>
                 </div>

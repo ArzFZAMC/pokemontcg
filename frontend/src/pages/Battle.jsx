@@ -7,14 +7,12 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import CardSelector from '../components/battle/CardSelector';
 import BattleArena from '../components/battle/BattleArena';
-import { GiSwordWound, GiCardPickup } from 'react-icons/gi';
-import { MdAdd, MdLogin, MdEmojiEvents, MdMonetizationOn, MdClose } from 'react-icons/md';
+import { GiSwordWound } from 'react-icons/gi';
+import { MdAdd, MdLogin, MdEmojiEvents, MdMonetizationOn } from 'react-icons/md';
 
 const BASE_URL = window.location.origin;
 
-const API = axios.create({
-  baseURL: `${BASE_URL}/api`
-});
+const API = axios.create({ baseURL: `${BASE_URL}/api` });
 API.interceptors.request.use(cfg => {
   const token = localStorage.getItem('pdex_token');
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
@@ -32,6 +30,7 @@ const BATTLE_PHASES = {
 export default function Battle() {
   const { user } = useAuth();
   const socketRef = useRef(null);
+  const phaseRef = useRef(BATTLE_PHASES.LOBBY);
 
   const [phase, setPhase] = useState(BATTLE_PHASES.LOBBY);
   const [roomCode, setRoomCode] = useState('');
@@ -47,16 +46,19 @@ export default function Battle() {
   const [attackLoading, setAttackLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [battleResult, setBattleResult] = useState(null);
-  const [opponentReady, setOpponentReady] = useState(false);
   const [iReady, setIReady] = useState(false);
 
-  // Fetch collection and stats
+  const updatePhase = (p) => {
+    phaseRef.current = p;
+    setPhase(p);
+  };
+
   useEffect(() => {
     collectionAPI.getAll().then(r => setCollection(r.data.data || []));
-    API.get('/battle/stats').then(r => setBattleStats(r.data));
+    API.get('/battle/stats').then(r => setBattleStats(r.data)).catch(() => {});
   }, []);
 
-  // Socket setup
+  // ── Socket setup ──────────────────────────────────────────────
   const setupSocket = useCallback(() => {
     if (socketRef.current) socketRef.current.disconnect();
 
@@ -66,73 +68,50 @@ export default function Battle() {
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       timeout: 20000,
-      upgrade: true,
-      rememberUpgrade: true,
     });
 
-        useEffect(() => {
-      if (!user) return;
-
-      const socket = setupSocket();
-
-      return () => {
-        socket?.disconnect();
-      };
-
-}, [setupSocket, user]);
     socket.on('connect', () => {
-      console.log('Socket connected');
+      console.log('Socket connected:', socket.id);
       socket.emit('auth', { userId: user.id, username: user.username });
     });
 
-    socket.on('auth_ok', () => {
-      console.log('Socket authenticated');
-    });
+    socket.on('auth_ok', () => console.log('Socket authenticated'));
 
     socket.on('room_state', ({ room, cards: c, logs: l }) => {
-
       setRoomData(room);
       setCards(c || []);
       setLogs(l || []);
+      console.log('room_state:', room?.status, 'cards:', c?.length);
 
-      console.log('room_state received:', room?.status, 'cards:', c?.length, 'roomData set:', !!room);
-
-      // AUTO SYNC PHASE
-      if (room?.status === 'waiting') {
-        setPhase(BATTLE_PHASES.WAITING);
+      if (!room) return;
+      if (room.status === 'finished') updatePhase(BATTLE_PHASES.FINISHED);
+      else if (room.status === 'battle') updatePhase(BATTLE_PHASES.BATTLE);
+      else if (room.status === 'selecting') {
+        if (phaseRef.current === BATTLE_PHASES.WAITING || phaseRef.current === BATTLE_PHASES.LOBBY) {
+          updatePhase(BATTLE_PHASES.SELECTING);
+        }
       }
-
-      if (room?.status === 'selecting') {
-        setPhase(BATTLE_PHASES.SELECTING);
-      }
-
-      if (room?.status === 'battle') {
-
-        setIReady(false);
-
-        setTimeout(() => {
-          setPhase(BATTLE_PHASES.BATTLE);
-        }, 100);
-
-      }
-
-      if (room?.status === 'finished') {
-        setPhase(BATTLE_PHASES.FINISHED);
-      }
-
     });
 
     socket.on('player_joined', ({ username }) => {
       toast.success(`${username} joined the room! 🎮`);
-      setPhase(BATTLE_PHASES.SELECTING);
+      updatePhase(BATTLE_PHASES.SELECTING);
+    });
+
+    socket.on('battle_phase_change', ({ phase: p }) => {
+      console.log('Phase change:', p, '| current:', phaseRef.current);
+      if (p === 'selecting') {
+        if (phaseRef.current === BATTLE_PHASES.WAITING || phaseRef.current === BATTLE_PHASES.LOBBY) {
+          updatePhase(BATTLE_PHASES.SELECTING);
+        }
+      }
+      if (p === 'battle') updatePhase(BATTLE_PHASES.BATTLE);
     });
 
     socket.on('battle_start', ({ message }) => {
       toast.success(message, { duration: 3000 });
-      setPhase(BATTLE_PHASES.BATTLE);
+      updatePhase(BATTLE_PHASES.BATTLE);
     });
-
-    
 
     socket.on('attack_result', (result) => {
       setAttackLoading(false);
@@ -145,7 +124,7 @@ export default function Battle() {
 
     socket.on('battle_end', (result) => {
       setBattleResult(result);
-      setPhase(BATTLE_PHASES.FINISHED);
+      updatePhase(BATTLE_PHASES.FINISHED);
       if (result.winnerId === user.id) {
         toast.success(`🏆 You won! +${result.coinReward} coins!`, { duration: 5000 });
       } else {
@@ -153,70 +132,64 @@ export default function Battle() {
       }
     });
 
-    socket.on('player_disconnected', ({ username }) => {
-      toast.error(`${username} disconnected`);
-    });
-
-    socket.on('chat_message', (msg) => {
-      setChatMessages(prev => [...prev.slice(-50), msg]);
-    });
-
+    socket.on('player_disconnected', ({ username }) => toast.error(`${username} disconnected`));
+    socket.on('chat_message', (msg) => setChatMessages(prev => [...prev.slice(-50), msg]));
     socket.on('error', ({ message }) => {
       toast.error(message);
       setAttackLoading(false);
       setSubmitLoading(false);
     });
-
-    socket.on('disconnect', () => {
-      console.log('Socket disconnected');
-    });
+    socket.on('disconnect', (reason) => console.log('Socket disconnected:', reason));
+    socket.on('connect_error', (err) => console.error('Socket error:', err.message));
 
     socketRef.current = socket;
     return socket;
   }, [user]);
 
-      // Polling fallback untuk ngrok/beda jaringan
-    // Polling fallback untuk ngrok/beda jaringan
-        useEffect(() => {
-  // Poll saat WAITING, SELECTING (sudah ready), atau BATTLE tapi roomData null
-  const shouldPoll = 
-    phase === BATTLE_PHASES.WAITING ||
-    (phase === BATTLE_PHASES.SELECTING && iReady) ||
-    (phase === BATTLE_PHASES.BATTLE && !roomData);
-    
-  if (!shouldPoll || !roomId) return;
+  useEffect(() => {
+    setupSocket();
+    return () => { socketRef.current?.disconnect(); };
+  }, [setupSocket]);
 
-  const interval = setInterval(async () => {
-    try {
-      const res = await API.get(`/battle/room/${roomId}`);
-      const room = res.data.room;
-      const c = res.data.cards || [];
-      const l = res.data.logs || [];
-      
-      console.log('Polling:', room?.status);
-      
-      // Update roomData dan cards dari polling
-      setRoomData(room);
-      setCards(c);
-      setLogs(l);
-      
-      if (room?.status === 'selecting') {
-        setPhase(BATTLE_PHASES.SELECTING);
-      } else if (room?.status === 'battle') {
-        setPhase(BATTLE_PHASES.BATTLE);
-        clearInterval(interval);
-      } else if (room?.status === 'finished') {
-        setPhase(BATTLE_PHASES.FINISHED);
-        clearInterval(interval);
+  // ── Polling fallback ──────────────────────────────────────────
+  useEffect(() => {
+    const shouldPoll =
+      phase === BATTLE_PHASES.WAITING ||
+      (phase === BATTLE_PHASES.SELECTING && iReady) ||
+      (phase === BATTLE_PHASES.BATTLE && !roomData);
+
+    if (!shouldPoll || !roomId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await API.get(`/battle/room/${roomId}`);
+        const room = res.data.room;
+        const c = res.data.cards || [];
+        const l = res.data.logs || [];
+        console.log('Polling:', room?.status);
+
+        setRoomData(room);
+        setCards(c);
+        setLogs(l);
+
+        if (room?.status === 'selecting') {
+          if (phaseRef.current === BATTLE_PHASES.WAITING) updatePhase(BATTLE_PHASES.SELECTING);
+        } else if (room?.status === 'battle') {
+          updatePhase(BATTLE_PHASES.BATTLE);
+          clearInterval(interval);
+        } else if (room?.status === 'finished') {
+          updatePhase(BATTLE_PHASES.FINISHED);
+          clearInterval(interval);
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
       }
-    } catch (err) {
-      console.error('Polling error:', err);
-    }
-  }, 2000);
+    }, 2000);
 
-  return () => clearInterval(interval);
-}, [phase, roomId, iReady, roomData]);
+    return () => clearInterval(interval);
+  }, [phase, roomId, iReady, roomData]);
 
+  // ── Handlers ─────────────────────────────────────────────────
   const handleCreateRoom = async () => {
     setLoading(true);
     try {
@@ -224,7 +197,7 @@ export default function Battle() {
       const { room_code, room_id } = res.data;
       setRoomCode(room_code);
       setRoomId(room_id);
-      setPhase(BATTLE_PHASES.WAITING);
+      updatePhase(BATTLE_PHASES.WAITING);
       socketRef.current?.emit('join_room', { roomId: room_id });
       toast.success(`Room created! Code: ${room_code}`);
     } catch (err) {
@@ -240,7 +213,7 @@ export default function Battle() {
       const { room_id, room_code } = res.data;
       setRoomId(room_id);
       setRoomCode(room_code);
-      setPhase(BATTLE_PHASES.SELECTING);
+      updatePhase(BATTLE_PHASES.SELECTING);
       socketRef.current?.emit('join_room', { roomId: room_id });
       toast.success('Joined room! Select your cards.');
     } catch (err) {
@@ -249,95 +222,76 @@ export default function Battle() {
   };
 
   const handleSubmitCards = async (selectedCards) => {
-  setSubmitLoading(true);
-  try {
-    // Enrich cards — ambil HP & attacks dari card_data atau Pokémon TCG API
-    const enrichedCards = await Promise.all(selectedCards.map(async (card) => {
-      let hp = null;
-      let attacks = [];
-      let weaknesses = [];
+    setSubmitLoading(true);
+    try {
+      // Enrich: ambil HP & attacks dari card_data atau langsung dari Pokemon TCG API
+      const enrichedCards = await Promise.all(selectedCards.map(async (card) => {
+        let hp = null;
+        let attacks = [];
+        let weaknesses = [];
 
-      // 1. Coba dari card_data dulu
-      if (card.card_data) {
-        try {
-          const data = typeof card.card_data === 'string'
-            ? JSON.parse(card.card_data) : card.card_data;
-          if (data?.hp) hp = parseInt(data.hp);
-          if (data?.attacks?.length) attacks = data.attacks;
-          if (data?.weaknesses?.length) weaknesses = data.weaknesses;
-        } catch {}
-      }
+        // 1. Dari card_data
+        if (card.card_data) {
+          try {
+            const data = typeof card.card_data === 'string'
+              ? JSON.parse(card.card_data) : card.card_data;
+            if (data?.hp) hp = parseInt(data.hp);
+            if (data?.attacks?.length) attacks = data.attacks;
+            if (data?.weaknesses?.length) weaknesses = data.weaknesses;
+          } catch {}
+        }
 
-      // 2. Kalau HP masih null, fetch langsung dari Pokémon TCG API
-      if (!hp && card.card_id) {
-        try {
-          const res = await API.get(`/cards/${card.card_id}`);
-          const apiCard = res.data.data;
-          if (apiCard?.hp) hp = parseInt(apiCard.hp);
-          if (apiCard?.attacks?.length) attacks = apiCard.attacks;
-          if (apiCard?.weaknesses?.length) weaknesses = apiCard.weaknesses;
-        } catch {}
-      }
+        // 2. Fetch dari API kalau HP masih null
+        if (!hp && card.card_id) {
+          try {
+            const r = await API.get(`/cards/${card.card_id}`);
+            const apiCard = r.data.data;
+            if (apiCard?.hp) hp = parseInt(apiCard.hp);
+            if (apiCard?.attacks?.length) attacks = apiCard.attacks;
+            if (apiCard?.weaknesses?.length) weaknesses = apiCard.weaknesses;
+          } catch {}
+        }
 
-      // 3. Fallback ke card_hp field
-      if (!hp && card.card_hp) hp = parseInt(card.card_hp);
+        // 3. Fallback ke field card_hp
+        if (!hp && card.card_hp) hp = parseInt(card.card_hp);
+        if (!hp || isNaN(hp) || hp <= 0) hp = 60;
 
-      // 4. Default
-      if (!hp || isNaN(hp) || hp <= 0) hp = 60;
+        console.log(`[Card] ${card.card_name}: HP=${hp}, Attacks=${attacks.length}`);
+        return { ...card, card_hp: hp, attacks, weaknesses };
+      }));
 
-      console.log(`[Card] ${card.card_name}: HP=${hp}, Attacks=${attacks.length}`);
-
-      return { ...card, card_hp: hp, attacks, weaknesses };
-    }));
-
-    const res = await API.post('/battle/cards/submit', {
-      room_id: roomId,
-      cards: enrichedCards,
-    });
-    setIReady(true);
-    toast.success('Cards submitted! Waiting for opponent...');
-    socketRef.current?.emit('cards_ready', { roomId });
-    if (res.data.battleStarted) {
-      setPhase(BATTLE_PHASES.BATTLE);
-    }
-  } catch (err) {
-    toast.error(err.response?.data?.message || 'Failed to submit cards');
-  } finally { setSubmitLoading(false); }
-};
+      const res = await API.post('/battle/cards/submit', {
+        room_id: roomId,
+        cards: enrichedCards,
+      });
+      setIReady(true);
+      toast.success('Cards submitted! Waiting for opponent...');
+      socketRef.current?.emit('cards_ready', { roomId });
+      if (res.data.battleStarted) updatePhase(BATTLE_PHASES.BATTLE);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to submit cards');
+    } finally { setSubmitLoading(false); }
+  };
 
   const handleAttack = (attackIndex) => {
-    setAttackLoading(true);
-    socketRef.current?.emit('attack', { roomId, attackIndex });
-  };
+  console.log('handleAttack called:', attackIndex, 'roomId:', roomId, 'isMyTurn:', isMyTurn);
+  setAttackLoading(true);
+  socketRef.current?.emit('attack', { roomId, attackIndex });
+};
 
-  const handleRetreat = (cardId) => {
-    socketRef.current?.emit('retreat', { roomId, cardId });
-  };
-
-  const handleForfeit = () => {
-    socketRef.current?.emit('forfeit', { roomId });
-  };
-
-  const handleSendChat = (message) => {
-    socketRef.current?.emit('chat', { roomId, message });
-  };
+  const handleRetreat = (cardId) => socketRef.current?.emit('retreat', { roomId, cardId });
+  const handleForfeit = () => socketRef.current?.emit('forfeit', { roomId });
+  const handleSendChat = (message) => socketRef.current?.emit('chat', { roomId, message });
 
   const handlePlayAgain = () => {
-    setBattleResult(null);
-    setRoomData(null);
-    setCards([]);
-    setLogs([]);
-    setChatMessages([]);
-    setRoomCode('');
-    setRoomId(null);
-    setJoinCode('');
-    setIReady(false);
-    setOpponentReady(false);
-    setPhase(BATTLE_PHASES.LOBBY);
-    API.get('/battle/stats').then(r => setBattleStats(r.data));
+    setBattleResult(null); setRoomData(null); setCards([]); setLogs([]);
+    setChatMessages([]); setRoomCode(''); setRoomId(null); setJoinCode(''); setIReady(false);
+    updatePhase(BATTLE_PHASES.LOBBY);
+    API.get('/battle/stats').then(r => setBattleStats(r.data)).catch(() => {});
   };
 
-  const isMyTurn = roomData?.current_turn === user.id;
+  // Fix: cast ke Number untuk perbandingan yang benar
+  const isMyTurn = Number(roomData?.current_turn) === Number(user?.id);
 
   return (
     <div className="space-y-5 page-transition max-w-2xl mx-auto">
@@ -366,12 +320,9 @@ export default function Battle() {
       {/* ── LOBBY ── */}
       {phase === BATTLE_PHASES.LOBBY && (
         <div className="space-y-4">
-          {/* Create or join */}
           <div className="grid sm:grid-cols-2 gap-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              className="glass-card p-6 text-center border border-white/5 hover:border-neon-purple/30 transition-all"
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              className="glass-card p-6 text-center border border-white/5 hover:border-neon-purple/30 transition-all">
               <GiSwordWound className="text-neon-purple text-4xl mx-auto mb-3" />
               <h3 className="text-lg font-bold text-white mb-1">Create Battle</h3>
               <p className="text-white/40 text-xs mb-4">Create a room and share the code</p>
@@ -380,23 +331,16 @@ export default function Battle() {
                 <MdAdd /> Create Room
               </button>
             </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-              className="glass-card p-6 border border-white/5 hover:border-neon-blue/30 transition-all"
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              className="glass-card p-6 border border-white/5 hover:border-neon-blue/30 transition-all">
               <MdLogin className="text-neon-blue text-4xl mx-auto mb-3 block text-center w-full" />
               <h3 className="text-lg font-bold text-white mb-1 text-center">Join Battle</h3>
               <p className="text-white/40 text-xs mb-4 text-center">Enter room code from opponent</p>
               <div className="flex gap-2">
-                <input
-                  type="text" placeholder="Room code..."
-                  value={joinCode}
+                <input type="text" placeholder="Room code..." value={joinCode}
                   onChange={e => setJoinCode(e.target.value.toUpperCase())}
                   className="input-glass flex-1 text-sm text-center tracking-widest uppercase font-bold"
-                  maxLength={6}
-                  onKeyDown={e => e.key === 'Enter' && handleJoinRoom()}
-                />
+                  maxLength={6} onKeyDown={e => e.key === 'Enter' && handleJoinRoom()} />
                 <button onClick={handleJoinRoom} disabled={loading || !joinCode.trim()}
                   className="px-4 py-2.5 rounded-xl bg-neon-blue/20 text-neon-blue border border-neon-blue/30 hover:bg-neon-blue/30 transition-all disabled:opacity-40 text-sm font-semibold">
                   Join
@@ -404,8 +348,6 @@ export default function Battle() {
               </div>
             </motion.div>
           </div>
-
-          {/* Battle history */}
           {battleStats?.recent?.length > 0 && (
             <div className="glass-card p-4">
               <h3 className="text-sm font-semibold text-white/60 mb-3 flex items-center gap-2">
@@ -422,9 +364,7 @@ export default function Battle() {
                       <span className="text-white/40">
                         {won ? b.winner_name : b.loser_name} vs {won ? b.loser_name : b.winner_name}
                       </span>
-                      <span className="text-white/30">
-                        {b.winner_ko}-{b.loser_ko}
-                      </span>
+                      <span className="text-white/30">{b.winner_ko}-{b.loser_ko}</span>
                     </div>
                   );
                 })}
@@ -434,106 +374,66 @@ export default function Battle() {
         </div>
       )}
 
-      {/* ── WAITING FOR OPPONENT ── */}
+      {/* ── WAITING ── */}
       {phase === BATTLE_PHASES.WAITING && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           className="glass-card p-8 text-center border border-neon-purple/20">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-            className="w-16 h-16 rounded-full border-4 border-neon-purple/20 border-t-neon-purple mx-auto mb-4"
-          />
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+            className="w-16 h-16 rounded-full border-4 border-neon-purple/20 border-t-neon-purple mx-auto mb-4" />
           <h2 className="text-xl font-bold text-white mb-2">Waiting for Opponent</h2>
           <p className="text-white/40 text-sm mb-4">Share this code with your opponent:</p>
           <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-navy-700 border border-neon-purple/30 mb-4">
             <span className="text-3xl font-bold text-neon-purple tracking-widest font-poppins">{roomCode}</span>
-            <button
-              onClick={() => { navigator.clipboard.writeText(roomCode); toast.success('Copied!'); }}
-              className="text-xs text-white/40 hover:text-white transition-colors"
-            >
-              Copy
-            </button>
+            <button onClick={() => { navigator.clipboard.writeText(roomCode); toast.success('Copied!'); }}
+              className="text-xs text-white/40 hover:text-white transition-colors">Copy</button>
           </div>
           <p className="text-white/20 text-xs">Once they join, you'll both select battle cards</p>
-          <button onClick={handlePlayAgain} className="mt-4 text-xs text-white/30 hover:text-red-400 transition-colors">
-            Cancel
-          </button>
+          <button onClick={handlePlayAgain} className="mt-4 text-xs text-white/30 hover:text-red-400 transition-colors">Cancel</button>
         </motion.div>
       )}
 
-      {/* ── CARD SELECTION ── */}
+      {/* ── SELECTING ── */}
       {phase === BATTLE_PHASES.SELECTING && (
         <div className="space-y-4">
-
           {iReady ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="glass-card p-6 text-center border border-green-500/20"
-            >
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="glass-card p-6 text-center border border-green-500/20">
               <div className="text-4xl mb-3">✅</div>
-
-              <h2 className="text-lg font-bold text-white">
-                Cards Submitted!
-              </h2>
-
-              <p className="text-white/40 text-sm mt-1">
-                Waiting for opponent to select their cards...
-              </p>
-
+              <h2 className="text-lg font-bold text-white">Cards Submitted!</h2>
+              <p className="text-white/40 text-sm mt-1">Waiting for opponent to select their cards...</p>
               <div className="w-8 h-8 border-2 border-neon-purple/30 border-t-neon-purple rounded-full animate-spin mx-auto mt-4" />
             </motion.div>
-
           ) : (
-
-            <CardSelector
-              collection={collection}
-              onSubmit={handleSubmitCards}
-              loading={submitLoading}
-            />
-
+            <CardSelector collection={collection} onSubmit={handleSubmitCards} loading={submitLoading} />
           )}
-
         </div>
       )}
 
       {/* ── BATTLE ── */}
-          {phase === BATTLE_PHASES.BATTLE && (
-      roomData ? (
-        <BattleArena
-          room={roomData}
-          cards={cards}
-          logs={logs}
-          myId={user.id}
-          isMyTurn={isMyTurn}
-          onAttack={handleAttack}
-          onRetreat={handleRetreat}
-          onForfeit={handleForfeit}
-          chatMessages={chatMessages}
-          onSendChat={handleSendChat}
-          attackLoading={attackLoading}
-        />
-      ) : (
-        <div className="glass-card p-8 text-center">
-          <div className="w-10 h-10 border-2 border-neon-purple/30 border-t-neon-purple rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-white/50">Loading battle...</p>
-        </div>
-      )
-    )}
+      {phase === BATTLE_PHASES.BATTLE && (
+        roomData ? (
+          <BattleArena
+            room={roomData} cards={cards} logs={logs}
+            myId={user.id} isMyTurn={isMyTurn}
+            onAttack={handleAttack} onRetreat={handleRetreat} onForfeit={handleForfeit}
+            chatMessages={chatMessages} onSendChat={handleSendChat} attackLoading={attackLoading}
+          />
+        ) : (
+          <div className="glass-card p-8 text-center">
+            <div className="w-10 h-10 border-2 border-neon-purple/30 border-t-neon-purple rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-white/50">Loading battle...</p>
+          </div>
+        )
+      )}
 
       {/* ── FINISHED ── */}
       {phase === BATTLE_PHASES.FINISHED && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-          className="glass-card p-8 text-center"
-        >
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+          className="glass-card p-8 text-center">
           {battleResult?.winnerId === user.id ? (
             <>
-              <motion.div
-                animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
-                transition={{ duration: 0.5, repeat: 3 }}
-                className="text-6xl mb-4"
-              >🏆</motion.div>
+              <motion.div animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
+                transition={{ duration: 0.5, repeat: 3 }} className="text-6xl mb-4">🏆</motion.div>
               <h2 className="text-2xl font-bold text-neon-gold mb-2">Victory!</h2>
               <p className="text-white/60 mb-4">You won the battle!</p>
               {battleResult?.coinReward && (
@@ -550,7 +450,6 @@ export default function Battle() {
               <p className="text-white/60 mb-6">Better luck next time, Trainer!</p>
             </>
           )}
-
           {battleResult && (
             <div className="flex justify-center gap-6 mb-6 text-sm">
               <div className="text-center">
@@ -564,11 +463,7 @@ export default function Battle() {
               </div>
             </div>
           )}
-
-          {battleResult?.forfeit && (
-            <p className="text-white/30 text-xs mb-4">{battleResult.logText}</p>
-          )}
-
+          {battleResult?.forfeit && <p className="text-white/30 text-xs mb-4">{battleResult.logText}</p>}
           <button onClick={handlePlayAgain} className="neon-btn px-8 flex items-center gap-2 mx-auto">
             <GiSwordWound /> Play Again
           </button>
